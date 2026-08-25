@@ -1,0 +1,21 @@
+# Write contract for agent-proposed corrections to silver.customers.segment
+# (017 walk-through — the full version of the trimmed block shown in the draft)
+version: 1
+target: silver.customers.segment
+writers:
+  - support-agent            # agent service principals allowed to PROPOSE
+authority: propose           # propose | apply — agents propose; promotion applies
+landing:
+  table: bronze.agent_writes # append-only; agents have INSERT here and nowhere else
+  required_columns: [write_id, agent_id, ts, target_table, target_key, old_value, new_value, evidence_ref]
+requires:
+  evidence_ref: true         # must cite queryable rows / files / tickets, not model confidence
+  allowed_values: [SMB, mid-market, enterprise]
+  fresh_read: true           # old_value must match current value at validation time (no blind writes)
+validation:
+  runs: on_arrival           # each landing-zone row validated individually
+  checks: [shape, authority, evidence]
+on_pass: promote_versioned   # supersede old value in Silver with lineage; never UPDATE in place
+on_fail: hold_for_review     # parked for a human; nothing silently dropped
+provenance:
+  keep_after_promotion: true # agent_id + evidence_ref survive into Silver/Gold lineage

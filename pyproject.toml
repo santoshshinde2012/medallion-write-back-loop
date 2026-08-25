@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medallion-write-back-loop"
+dynamic = ["version"]
+description = "Where agent-written data lands in a medallion lakehouse: land, validate, promote versioned, roll back - a zero-dependency demo"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Santosh Shinde"}]
+keywords = ["medallion-architecture", "ai-agents", "lakehouse", "data-engineering", "write-back"]
+
+[project.urls]
+Repository = "https://github.com/santoshshinde2012/medallion-write-back-loop"
+Article = "https://github.com/santoshshinde2012/blogs/tree/main/articles/017-medallion-write-path"
+PreviousVersion = "https://github.com/santoshshinde2012/medallion-architecture-databrics"
+
+[project.scripts]
+medallion-write-back = "medallion_write_back.demo:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "medallion_write_back.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+medallion_write_back = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+mypy_path = "src"
+packages = ["medallion_write_back"]
