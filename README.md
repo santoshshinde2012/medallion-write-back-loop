@@ -8,8 +8,8 @@ AI agents write — corrections, decisions, new records. This repo is the runnab
 earn trust through a contract, get promoted as *versioned* corrections, and roll back with
 one statement. A loop, not a ladder.
 
-Companion code for the series article **The Write-Back Problem: What Agents Add to Your
-Lakehouse, and Where It Should Land** ([draft & research](https://github.com/santoshshinde2012/blogs/tree/main/articles/017-medallion-write-path);
+Companion code for the series article **Medallion Architecture Assumed the Reader Never Writes, But Agents Write**
+(*The Write-Back Problem: What Agents Add to Your Lakehouse, and Where It Should Land*) ([draft & research](https://github.com/santoshshinde2012/blogs/tree/main/articles/017-medallion-write-path);
 this link switches to the Medium URL on publication). The engineered next version of
 [medallion-architecture-databrics](https://github.com/santoshshinde2012/medallion-architecture-databrics),
 the notebooks behind [Medallion Architecture: Principles and Practical Exploration](https://levelup.gitconnected.com/medallion-architecture-principles-and-practical-exploration-425834ae3bc7) (2025).
