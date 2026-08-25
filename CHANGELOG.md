@@ -2,8 +2,8 @@
 
 ## 0.1.0 — 2026-08-25
 
-First release: the runnable companion to the series article **Medallion Architecture Assumed the Reader Never Writes, But Agents Write**
-(subtitle: *The Write-Back Problem: What Agents Add to Your Lakehouse, and Where It Should Land*) (link will switch to the published
+First release: the runnable companion to the series article **Medallion Has a Write-Back Problem**
+(subtitle: *Agents now write to your lakehouse, and nothing in Bronze, Silver, or Gold says where those writes belong. Four kinds, four homes.*) (link will switch to the published
 Medium URL on publication; draft lives in the
 [blogs repo](https://github.com/santoshshinde2012/blogs/tree/main/articles/017-medallion-write-path)).
 
