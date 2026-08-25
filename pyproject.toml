@@ -32,6 +32,7 @@ medallion_write_back = ["py.typed"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

@@ -20,3 +20,16 @@ jobs:
       - run: ruff format --check .
       - run: mypy
       - run: ./run_demo.sh
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - run: pip install dist/*.whl
+      - run: medallion-write-back
