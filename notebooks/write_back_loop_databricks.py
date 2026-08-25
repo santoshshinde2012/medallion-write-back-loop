@@ -6,6 +6,10 @@
 # MAGIC promote as a **versioned** correction → rebuild Gold → roll back with one statement.
 # MAGIC
 # MAGIC Illustrative companion to the repo's demo — adapt catalog/schema names to your workspace.
+# MAGIC
+# MAGIC **Requirements:** Databricks Runtime 11.3 LTS+ for column `DEFAULT` values, and the
+# MAGIC `delta.feature.allowColumnDefaults` table property (set below) — without it the CREATE
+# MAGIC fails with `[WRONG_COLUMN_DEFAULTS_FOR_DELTA_FEATURE_NOT_ENABLED]`.
 # MAGIC Not executed by CI; the runnable, tested version is `src/medallion_write_back/`.
 
 # COMMAND ----------
@@ -24,13 +28,15 @@
 # MAGIC   write_id STRING, agent_id STRING, ts TIMESTAMP,
 # MAGIC   target_table STRING, target_key STRING, column_name STRING,
 # MAGIC   old_value STRING, new_value STRING, evidence_ref STRING,
-# MAGIC   status STRING DEFAULT 'pending');
+# MAGIC   status STRING DEFAULT 'pending')
+# MAGIC TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported');
 # MAGIC
 # MAGIC CREATE OR REPLACE TABLE silver_customer_corrections (
 # MAGIC   correction_id BIGINT GENERATED ALWAYS AS IDENTITY,
 # MAGIC   write_id STRING, customer_id STRING, column_name STRING,
 # MAGIC   old_value STRING, new_value STRING, agent_id STRING, evidence_ref STRING,
-# MAGIC   active BOOLEAN DEFAULT true);
+# MAGIC   active BOOLEAN DEFAULT true)
+# MAGIC TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported');
 
 # COMMAND ----------
 # MAGIC %sql
