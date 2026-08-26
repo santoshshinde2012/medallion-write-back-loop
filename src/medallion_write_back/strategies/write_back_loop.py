@@ -1,4 +1,4 @@
-"""The loop: land in Bronze, validate, promote versioned, rebuild Gold — and roll back."""
+"""The loop: land in Bronze, validate, promote a versioned correction, rebuild Gold."""
 
 from __future__ import annotations
 
@@ -13,72 +13,94 @@ from ..validators import default_contract
 
 @dataclass(frozen=True)
 class WriteBackLoopStrategy:
-    """Treat the agent as a source system: append-only landing + earned trust."""
+    """Treat the agent as a source system: append-only landing, then earned trust."""
 
     validators: tuple[Validator, ...] = field(default_factory=default_contract)
     label: str = "Write-back loop (land -> validate -> promote versioned)"
 
     def apply(self, conn: sqlite3.Connection, write: AgentWrite) -> PathOutcome:
-        # 1. Land — append-only, attributed, replayable.
-        conn.execute(
+        # 1. LAND — append-only, attributed, replayable. A replayed write_id is a no-op,
+        #    so re-running the agent cannot crash or double-post.
+        cur = conn.execute(
             """INSERT INTO bronze_agent_writes
-               (write_id, agent_id, target_table, target_key, column_name,
-                old_value, new_value, evidence_ref)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (write_id, agent_id, c_custkey, column_name, old_value, new_value, evidence_ref)
+               VALUES (?, ?, ?, 'c_mktsegment', ?, ?, ?)
+               ON CONFLICT(write_id) DO NOTHING""",
             (
                 write.write_id,
                 write.agent_id,
-                write.target_table,
-                write.target_key,
-                write.column,
-                write.old_value,
-                write.new_value,
+                write.c_custkey,
+                write.old_mktsegment,
+                write.new_mktsegment,
                 write.evidence_ref,
             ),
         )
-        # 2. Validate — trust is earned, not asserted.
+        replayed = cur.rowcount == 0
+        conn.commit()  # the landing row is durable before any validation runs
+
+        if replayed:
+            return self._outcome_for_existing(conn, write)
+
+        # 2. VALIDATE — trust is earned, not asserted by the writer.
         report = ValidationReport(tuple(v.check(conn, write) for v in self.validators))
         status = "promoted" if report.passed else "held"
         conn.execute(
             "UPDATE bronze_agent_writes SET status = ? WHERE write_id = ?",
             (status, write.write_id),
         )
-        # 3. Promote — versioned correction; the old value is superseded, never overwritten.
+
+        # 3. PROMOTE — a versioned correction; the old value is superseded, never overwritten.
         if report.passed:
             conn.execute(
                 """INSERT INTO silver_customer_corrections
-                   (write_id, customer_id, column_name, old_value, new_value,
-                    agent_id, evidence_ref)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (write_id, c_custkey, column_name, old_value, new_value, agent_id, evidence_ref)
+                   VALUES (?, ?, 'c_mktsegment', ?, ?, ?, ?)""",
                 (
                     write.write_id,
-                    write.target_key,
-                    write.column,
-                    write.old_value,
-                    write.new_value,
+                    write.c_custkey,
+                    write.old_mktsegment,
+                    write.new_mktsegment,
                     write.agent_id,
                     write.evidence_ref,
                 ),
             )
         conn.commit()
-        after = rebuild_gold_segment(conn, write.target_key)
-        history = conn.execute(
-            "SELECT COUNT(*) FROM silver_customer_corrections WHERE customer_id = ?",
-            (write.target_key,),
-        ).fetchone()[0]
-        # 4. Roll back — one statement against the versioned history.
-        conn.execute(
-            "UPDATE silver_customer_corrections SET active = 0 WHERE write_id = ?",
-            (write.write_id,),
+        return self._outcome(conn, write, status, report.checks_run)
+
+    def roll_back(self, conn: sqlite3.Connection, write_id: str) -> int:
+        """Deactivate a promoted correction. Returns the number of statements that changed rows."""
+        cur = conn.execute(
+            "UPDATE silver_customer_corrections SET active = 0 WHERE write_id = ? AND active = 1",
+            (write_id,),
         )
         conn.commit()
-        restored = rebuild_gold_segment(conn, write.target_key)
+        return 1 if cur.rowcount else 0
+
+    def _history_rows(self, conn: sqlite3.Connection, c_custkey: int) -> int:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM silver_customer_corrections WHERE c_custkey = ?", (c_custkey,)
+        ).fetchone()
+        return int(row[0])
+
+    def _outcome(
+        self, conn: sqlite3.Connection, write: AgentWrite, status: str, checks: int
+    ) -> PathOutcome:
+        after = rebuild_gold_segment(conn, write.c_custkey)
+        promoted = status == "promoted"
         return PathOutcome(
             label=self.label,
             gold_segment_after_write=str(after),
-            history_rows=int(history),
-            checks_run=report.checks_run,
-            can_recover_old_value=True,
-            rollback_statements=1,
-            gold_segment_after_rollback=restored,
+            history_rows=self._history_rows(conn, write.c_custkey),
+            checks_run=checks,
+            can_recover_old_value=promoted,
+            rollback_statements=1 if promoted else None,
+            gold_segment_after_rollback=None,
+            status=status,
         )
+
+    def _outcome_for_existing(self, conn: sqlite3.Connection, write: AgentWrite) -> PathOutcome:
+        row = conn.execute(
+            "SELECT status FROM bronze_agent_writes WHERE write_id = ?", (write.write_id,)
+        ).fetchone()
+        status = str(row[0]) if row else "pending"
+        return self._outcome(conn, write, status, 0)

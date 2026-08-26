@@ -1,21 +1,25 @@
-# Write contract for agent-proposed corrections to silver.customers.segment
-# (017 walk-through — the full version of the trimmed block shown in the draft)
+# Write contract for agent-proposed corrections to a customer's market segment.
+# The table shape is Databricks' built-in sample: samples.tpch.customer
+#   SELECT c_custkey, c_name, c_mktsegment FROM samples.tpch.customer LIMIT 5
 version: 1
-target: silver.customers.segment
+target: gold.customers.c_mktsegment      # the column the correction is about
+promote_via: silver.customer_corrections # promotions land here as versioned rows, never in place
 writers:
-  - support-agent            # agent service principals allowed to PROPOSE
-authority: propose           # propose | apply — agents propose; promotion applies
+  - segment-agent            # agent service principals allowed to PROPOSE
+authority: propose           # propose | apply — agents propose; a governed job applies
 landing:
   table: bronze.agent_writes # append-only; agents have INSERT here and nowhere else
-  required_columns: [write_id, agent_id, ts, target_table, target_key, old_value, new_value, evidence_ref]
+  required_columns: [write_id, agent_id, ts, c_custkey, column_name, old_value, new_value, evidence_ref]
 requires:
-  evidence_ref: true         # must cite queryable rows / files / tickets, not model confidence
-  allowed_values: [SMB, mid-market, enterprise]
-  fresh_read: true           # old_value must match current value at validation time (no blind writes)
+  evidence_ref: true         # must cite a queryable source, not model confidence
+  allowed_values: [AUTOMOBILE, BUILDING, FURNITURE, HOUSEHOLD, MACHINERY]  # TPC-H segments
+  fresh_read: true           # old_value must match what Gold SERVES right now, corrections included
 validation:
-  runs: on_arrival           # each landing-zone row validated individually
+  runs: on_arrival           # each landing-zone row is validated individually
   checks: [shape, authority, evidence]
-on_pass: promote_versioned   # supersede old value in Silver with lineage; never UPDATE in place
-on_fail: hold_for_review     # parked for a human; nothing silently dropped
+on_pass: promote_versioned   # supersede the old value with lineage; never UPDATE in place
+on_fail: hold_for_review     # parked for a human; nothing is silently dropped
+idempotency:
+  key: write_id              # replaying a write_id is a no-op, so a re-run cannot double-post
 provenance:
   keep_after_promotion: true # agent_id + evidence_ref survive into Silver/Gold lineage

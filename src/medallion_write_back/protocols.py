@@ -24,7 +24,7 @@ class Validator(Protocol):
 
 
 class WritePathStrategy(Protocol):
-    """A way an agent's write can reach the platform."""
+    """A way an agent's proposed correction can reach the platform."""
 
     @property
     def label(self) -> str: ...

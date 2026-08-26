@@ -1,87 +1,122 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # The Write-Back Loop on Databricks (illustrative)
-# MAGIC The same loop the Python demo proves, expressed against Delta tables:
-# MAGIC land in `bronze_agent_writes` → validate (shape / authority / evidence) →
-# MAGIC promote as a **versioned** correction → rebuild Gold → roll back with one statement.
+# MAGIC # The Write-Back Loop on Databricks
 # MAGIC
-# MAGIC Illustrative companion to the repo's demo — adapt catalog/schema names to your workspace.
+# MAGIC The same loop the Python demo proves, against Delta tables built from the sample data
+# MAGIC every workspace already has: `samples.tpch.customer`.
+# MAGIC
+# MAGIC Land in `bronze_agent_writes` → validate (shape / authority / evidence) → promote a
+# MAGIC **versioned** correction → rebuild Gold → roll back with one statement.
 # MAGIC
 # MAGIC **Requirements:** Databricks Runtime 11.3 LTS+ for column `DEFAULT` values, and the
 # MAGIC `delta.feature.allowColumnDefaults` table property (set below) — without it the CREATE
-# MAGIC fails with `[WRONG_COLUMN_DEFAULTS_FOR_DELTA_FEATURE_NOT_ENABLED]`.
-# MAGIC Not executed by CI; the runnable, tested version is `src/medallion_write_back/`.
+# MAGIC fails with `[WRONG_COLUMN_DEFAULTS_FOR_DELTA_FEATURE_NOT_ENABLED]`. Run the cells in order.
+
+# COMMAND ----------
+# MAGIC %sql
+# MAGIC -- Look at the source data first. This table exists in every Databricks workspace.
+# MAGIC SELECT c_custkey, c_name, c_mktsegment, c_acctbal
+# MAGIC FROM samples.tpch.customer
+# MAGIC LIMIT 5;
 
 # COMMAND ----------
 # MAGIC %sql
 # MAGIC CREATE SCHEMA IF NOT EXISTS demo_write_back;
 # MAGIC USE demo_write_back;
 # MAGIC
-# MAGIC CREATE OR REPLACE TABLE gold_customers (customer_id STRING, name STRING, segment STRING, seats INT);
-# MAGIC INSERT INTO gold_customers VALUES
-# MAGIC   ('ACME-001', 'ACME Corp', 'SMB', 480),
-# MAGIC   ('GLOBEX-002', 'Globex Ltd', 'mid-market', 130),
-# MAGIC   ('INITECH-003', 'Initech LLC', 'SMB', 45);
+# MAGIC -- Gold: a small slice of the sample, so the notebook runs in seconds.
+# MAGIC CREATE OR REPLACE TABLE gold_customers AS
+# MAGIC SELECT c_custkey, c_name, c_mktsegment, c_acctbal
+# MAGIC FROM samples.tpch.customer
+# MAGIC WHERE c_custkey BETWEEN 412440 AND 412450;
 # MAGIC
-# MAGIC -- The receiving desk: append-only, attributed, replayable
+# MAGIC -- The receiving desk. Append-only in content: only `status` moves.
 # MAGIC CREATE OR REPLACE TABLE bronze_agent_writes (
 # MAGIC   write_id STRING, agent_id STRING, ts TIMESTAMP,
-# MAGIC   target_table STRING, target_key STRING, column_name STRING,
+# MAGIC   c_custkey BIGINT, column_name STRING,
 # MAGIC   old_value STRING, new_value STRING, evidence_ref STRING,
 # MAGIC   status STRING DEFAULT 'pending')
 # MAGIC TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported');
 # MAGIC
+# MAGIC -- Versioned corrections: the old value is superseded, never overwritten.
 # MAGIC CREATE OR REPLACE TABLE silver_customer_corrections (
 # MAGIC   correction_id BIGINT GENERATED ALWAYS AS IDENTITY,
-# MAGIC   write_id STRING, customer_id STRING, column_name STRING,
+# MAGIC   write_id STRING, c_custkey BIGINT, column_name STRING,
 # MAGIC   old_value STRING, new_value STRING, agent_id STRING, evidence_ref STRING,
 # MAGIC   active BOOLEAN DEFAULT true)
 # MAGIC TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported');
 
 # COMMAND ----------
+# MAGIC %md
+# MAGIC ## 1. LAND — the agent proposes; it never touches Silver or Gold directly
+# MAGIC
+# MAGIC Pick a customer that exists in the slice above and use its real current segment as
+# MAGIC `old_value`, so the fresh-read check has something true to compare against.
+
+# COMMAND ----------
 # MAGIC %sql
-# MAGIC -- 1. LAND: the agent proposes; it never touches Silver or Gold directly
 # MAGIC INSERT INTO bronze_agent_writes
-# MAGIC   (write_id, agent_id, ts, target_table, target_key, column_name, old_value, new_value, evidence_ref, status)
-# MAGIC VALUES
-# MAGIC   ('w-5203-001', 'support-agent', current_timestamp(), 'gold_customers', 'ACME-001', 'segment', 'SMB', 'enterprise', 'ticket:5203', 'pending');
+# MAGIC   (write_id, agent_id, ts, c_custkey, column_name, old_value, new_value, evidence_ref, status)
+# MAGIC SELECT 'w-2026-08-26-0001', 'segment-agent', current_timestamp(),
+# MAGIC        c_custkey, 'c_mktsegment', c_mktsegment, 'BUILDING',
+# MAGIC        'query:orders_by_part_category', 'pending'
+# MAGIC FROM gold_customers
+# MAGIC ORDER BY c_custkey
+# MAGIC LIMIT 1;
+# MAGIC
+# MAGIC SELECT * FROM bronze_agent_writes;
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## 2. VALIDATE — shape, authority, evidence (including the fresh read)
 
 # COMMAND ----------
 # MAGIC %sql
-# MAGIC -- 2. VALIDATE: the three-check contract (shape / authority / evidence+fresh-read) as one pass
-# MAGIC UPDATE bronze_agent_writes w
-# MAGIC SET status = CASE WHEN
-# MAGIC     w.new_value IN ('SMB', 'mid-market', 'enterprise')                       -- shape
-# MAGIC     AND w.agent_id IN ('support-agent')                                      -- authority: propose
-# MAGIC     AND w.evidence_ref IS NOT NULL AND length(trim(w.evidence_ref)) > 0      -- evidence cited
-# MAGIC     AND EXISTS (SELECT 1 FROM gold_customers g                               -- fresh read
-# MAGIC                 WHERE g.customer_id = w.target_key AND g.segment = w.old_value)
-# MAGIC   THEN 'promoted' ELSE 'held' END
-# MAGIC WHERE w.status = 'pending';
+# MAGIC MERGE INTO bronze_agent_writes AS w
+# MAGIC USING (SELECT c_custkey, c_mktsegment FROM gold_customers) AS g
+# MAGIC   ON w.c_custkey = g.c_custkey AND w.status = 'pending'
+# MAGIC WHEN MATCHED THEN UPDATE SET w.status = CASE WHEN
+# MAGIC     w.new_value IN ('AUTOMOBILE','BUILDING','FURNITURE','HOUSEHOLD','MACHINERY')  -- shape
+# MAGIC     AND w.agent_id IN ('segment-agent')                                           -- authority
+# MAGIC     AND w.evidence_ref IS NOT NULL AND length(trim(w.evidence_ref)) > 0           -- evidence
+# MAGIC     AND w.old_value = g.c_mktsegment                                              -- fresh read
+# MAGIC   THEN 'promoted' ELSE 'held' END;
+# MAGIC
+# MAGIC SELECT write_id, c_custkey, old_value, new_value, status FROM bronze_agent_writes;
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## 3. PROMOTE — a versioned correction, and Gold rebuilt as a view
 
 # COMMAND ----------
 # MAGIC %sql
-# MAGIC -- 3. PROMOTE: versioned correction — the old value is superseded, never overwritten
 # MAGIC INSERT INTO silver_customer_corrections
-# MAGIC   (write_id, customer_id, column_name, old_value, new_value, agent_id, evidence_ref, active)
-# MAGIC SELECT write_id, target_key, column_name, old_value, new_value, agent_id, evidence_ref, true
-# MAGIC FROM bronze_agent_writes WHERE status = 'promoted'
-# MAGIC   AND write_id NOT IN (SELECT write_id FROM silver_customer_corrections);
+# MAGIC   (write_id, c_custkey, column_name, old_value, new_value, agent_id, evidence_ref, active)
+# MAGIC SELECT w.write_id, w.c_custkey, w.column_name, w.old_value, w.new_value,
+# MAGIC        w.agent_id, w.evidence_ref, true
+# MAGIC FROM bronze_agent_writes w
+# MAGIC LEFT ANTI JOIN silver_customer_corrections c ON w.write_id = c.write_id
+# MAGIC WHERE w.status = 'promoted';
 # MAGIC
-# MAGIC -- Gold rebuild = base value overlaid by the latest active correction
 # MAGIC CREATE OR REPLACE VIEW gold_customers_current AS
-# MAGIC SELECT g.customer_id, g.name,
-# MAGIC        coalesce(c.new_value, g.segment) AS segment, g.seats
+# MAGIC SELECT g.c_custkey, g.c_name,
+# MAGIC        coalesce(x.new_value, g.c_mktsegment) AS c_mktsegment, g.c_acctbal
 # MAGIC FROM gold_customers g
-# MAGIC LEFT JOIN (SELECT customer_id, max_by(new_value, correction_id) AS new_value
-# MAGIC            FROM silver_customer_corrections
-# MAGIC            WHERE column_name = 'segment' AND active GROUP BY customer_id) c
-# MAGIC   ON g.customer_id = c.customer_id;
+# MAGIC LEFT JOIN (SELECT c_custkey, max_by(new_value, correction_id) AS new_value
+# MAGIC              FROM silver_customer_corrections
+# MAGIC             WHERE column_name = 'c_mktsegment' AND active
+# MAGIC             GROUP BY c_custkey) x
+# MAGIC   ON g.c_custkey = x.c_custkey;
 # MAGIC
-# MAGIC SELECT * FROM gold_customers_current WHERE customer_id = 'ACME-001';  -- segment = enterprise
+# MAGIC SELECT * FROM gold_customers_current ORDER BY c_custkey LIMIT 3;  -- the correction is live
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## 4. ROLL BACK — one statement against the versioned history
 
 # COMMAND ----------
 # MAGIC %sql
-# MAGIC -- 4. ROLL BACK: one statement against the versioned history; Gold rebuilds to SMB
-# MAGIC UPDATE silver_customer_corrections SET active = false WHERE write_id = 'w-5203-001';
-# MAGIC SELECT * FROM gold_customers_current WHERE customer_id = 'ACME-001';  -- segment = SMB again
+# MAGIC UPDATE silver_customer_corrections SET active = false
+# MAGIC  WHERE write_id = 'w-2026-08-26-0001';
+# MAGIC
+# MAGIC SELECT * FROM gold_customers_current ORDER BY c_custkey LIMIT 3;  -- back to the original

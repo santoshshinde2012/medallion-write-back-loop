@@ -6,19 +6,25 @@ from .models import PathOutcome
 
 
 def render_text(outcomes: list[PathOutcome]) -> str:
-    lines: list[str] = ["=== The Write-Back Problem: one correction, traced twice ===", ""]
+    lines: list[str] = [
+        "=== The write-back problem: one proposed correction, traced twice ===",
+        "    gold_customers is the TPC-H customer shape (samples.tpch.customer)",
+        "",
+    ]
     for o in outcomes:
+        recoverable = "yes" if o.can_recover_old_value else "NO"
         lines += [
             f"--- {o.label} ---",
-            f"  gold.customers segment after write : {o.gold_segment_after_write}",
-            f"  validation checks run              : {o.checks_run}",
-            f"  history rows (versioned)           : {o.history_rows}",
-            f"  old value recoverable              : {'yes' if o.can_recover_old_value else 'NO'}",
+            f"  c_mktsegment Gold serves after write : {o.gold_segment_after_write}",
+            f"  validation checks run                : {o.checks_run}",
+            f"  landing-zone status                  : {o.status}",
+            f"  versioned history rows               : {o.history_rows}",
+            f"  old value recoverable                : {recoverable}",
             (
-                f"  rollback                           : {o.rollback_statements} statement -> "
-                f"segment = {o.gold_segment_after_rollback}"
-                if o.rollback_statements is not None
-                else "  rollback                           : IMPOSSIBLE (nothing recorded)"
+                f"  rollback                             : {o.rollback_statements} statement -> "
+                f"c_mktsegment = {o.gold_segment_after_rollback}"
+                if o.rollback_statements
+                else "  rollback                             : IMPOSSIBLE (nothing recorded)"
             ),
             "",
         ]

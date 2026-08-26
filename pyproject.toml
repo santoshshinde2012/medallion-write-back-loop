@@ -14,7 +14,7 @@ keywords = ["medallion-architecture", "ai-agents", "lakehouse", "data-engineerin
 
 [project.urls]
 Repository = "https://github.com/santoshshinde2012/medallion-write-back-loop"
-Article = "https://github.com/santoshshinde2012/blogs/tree/main/articles/017-medallion-write-path"
+Article = "https://medium.com/@santosh-shinde"
 PreviousVersion = "https://github.com/santoshshinde2012/medallion-architecture-databrics"
 
 [project.scripts]

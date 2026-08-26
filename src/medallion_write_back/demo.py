@@ -1,4 +1,4 @@
-"""Composition root — the ACME correction from the article, run end to end."""
+"""Composition root — the walk-through from the article, run end to end."""
 
 from __future__ import annotations
 
@@ -11,15 +11,15 @@ from .repository import SqliteGoldRepository
 from .strategies.in_place import InPlaceUpdateStrategy
 from .strategies.write_back_loop import WriteBackLoopStrategy
 
-ACME_CORRECTION = AgentWrite(
-    write_id="w-5203-001",
-    agent_id="support-agent",
-    target_table="gold_customers",
-    target_key="ACME-001",
-    column="segment",
-    old_value="SMB",
-    new_value="enterprise",
-    evidence_ref="ticket:5203",
+# A segment agent reads Gold, compares it with the account\'s own order history,
+# and proposes a correction citing the query that shows the contradiction.
+SEGMENT_CORRECTION = AgentWrite(
+    write_id="w-2026-08-26-0001",
+    agent_id="segment-agent",
+    c_custkey=412_445,
+    old_mktsegment="FURNITURE",
+    new_mktsegment="BUILDING",
+    evidence_ref="query:orders_by_part_category#c_custkey=412445",
 )
 
 
@@ -28,13 +28,14 @@ def main() -> int:
         repository=SqliteGoldRepository(),
         paths=[InPlaceUpdateStrategy(), WriteBackLoopStrategy()],
     )
-    outcomes = service.run(ACME_CORRECTION)
+    outcomes = service.run(SEGMENT_CORRECTION)
     print(render_text(outcomes))
     in_place, loop = outcomes
     ok = (
         loop.checks_run == 3
-        and loop.gold_segment_after_write == "enterprise"
-        and loop.gold_segment_after_rollback == "SMB"
+        and loop.gold_segment_after_write == "BUILDING"
+        and loop.gold_segment_after_rollback == "FURNITURE"
+        and loop.rollback_statements == 1
         and not in_place.can_recover_old_value
     )
     return 0 if ok else 1

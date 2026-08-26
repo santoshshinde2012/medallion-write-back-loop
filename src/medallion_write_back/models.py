@@ -7,15 +7,17 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class AgentWrite:
-    """One proposed change from an agent — a row for bronze.agent_writes."""
+    """One proposed correction from an agent — a row for bronze.agent_writes.
+
+    Mirrors the shape of Databricks' built-in `samples.tpch.customer`, so the
+    column names here are the ones a reader sees in their own workspace.
+    """
 
     write_id: str
     agent_id: str
-    target_table: str
-    target_key: str
-    column: str
-    old_value: str
-    new_value: str
+    c_custkey: int
+    old_mktsegment: str
+    new_mktsegment: str
     evidence_ref: str
 
 
@@ -40,7 +42,8 @@ class ValidationReport:
 
     @property
     def passed(self) -> bool:
-        return all(r.ok for r in self.results)
+        """An empty contract must never pass — a mis-wired validator list fails closed."""
+        return bool(self.results) and all(r.ok for r in self.results)
 
 
 @dataclass(frozen=True)
@@ -54,3 +57,4 @@ class PathOutcome:
     can_recover_old_value: bool
     rollback_statements: int | None
     gold_segment_after_rollback: str | None
+    status: str = "n/a"

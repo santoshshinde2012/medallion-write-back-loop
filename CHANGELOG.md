@@ -2,10 +2,10 @@
 
 ## 0.1.0 — 2026-08-25
 
-First release: the runnable companion to the series article **Medallion Has a Write-Back Problem**
+First release: the runnable companion to the series article **Medallion Architecture Has a Write-Back Problem**
 (subtitle: *Agents now write to your lakehouse, and nothing in Bronze, Silver, or Gold says where those writes belong. Four kinds, four homes.*) (link will switch to the published
 Medium URL on publication; draft lives in the
-[blogs repo](https://github.com/santoshshinde2012/blogs/tree/main/articles/017-medallion-write-path)).
+the author's series).
 
 The engineered next version of
 [medallion-architecture-databrics](https://github.com/santoshshinde2012/medallion-architecture-databrics)
