@@ -8,10 +8,9 @@ AI agents write — corrections, decisions, new records. This repo is the runnab
 trust through a contract, get promoted as *versioned* corrections, and roll back with one
 statement. A loop, not a ladder.
 
-Companion code for the article **Medallion Architecture Has a Write-Back Problem**
+Companion code for the article **[Medallion Architecture Has a Write-Back Problem](https://medium.com/@santosh-shinde/medallion-architecture-has-a-write-back-problem-525d088eeb0f)**
 (*Agents now write to your lakehouse, and nothing in Bronze, Silver, or Gold says where those
-writes belong. Four kinds, four homes.*) — publishing on
-[Medium](https://medium.com/@santosh-shinde); this line will carry the direct link once it is live.
+writes belong. Four kinds, four homes.*).
 
 The engineered next version of
 [medallion-architecture-databrics](https://github.com/santoshshinde2012/medallion-architecture-databrics),
